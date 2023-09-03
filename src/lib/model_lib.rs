@@ -68,6 +68,7 @@ impl Menu {
 }
 
 
+
 #[derive(Clone)]
 pub enum AudioPlayerStatus{
     Pause,
@@ -239,8 +240,8 @@ impl AudioPlayer{
 
         let audio_player_clone = self.play_obj.clone();
         let current_audio_time_clone = self.current_audio_time.clone();
-        let list_audio_clone = self.list_audio.clone();
-        let current_nb_audios_clone_u32 = *self.current_nb_audios.clone().lock().unwrap();
+        let _list_audio_clone = self.list_audio.clone();
+        let _current_nb_audios_clone_u32 = *self.current_nb_audios.clone().lock().unwrap();
         let file_name = format!("test{}", *self.current_nb_audios.lock().unwrap());
 
         // Get audio file path  which is clean
@@ -264,7 +265,7 @@ impl AudioPlayer{
 
     fn exec_play_audio(dir_path: &str, audio_player: &Sink, file_name: &str, current_audio_time: &mut Duration){
          //println!("{:?}", format!("{}\\{}.mp3", dir_path, file_name));
-        // Open the audio file
+        // try to open the audio file
         let file = File::open(format!("{}\\{}.wav", dir_path, file_name)).map_or_else(|_| None,|file| Some(file));
         if !(matches!(file, None)){
             let audio_source = rodio::Decoder::new(BufReader::new(file.unwrap())).unwrap();
@@ -279,7 +280,6 @@ impl AudioPlayer{
         }
     }
 }
-
 
 
 
@@ -303,7 +303,6 @@ impl PlaylistKa  {
     }
 }
 
-
 // Implement the Display trait for PlaylistKa
 impl Display for PlaylistKa
 {
@@ -318,6 +317,7 @@ impl Display for PlaylistKa
         Ok(())
     }
 }
+
 
 
 #[derive(Debug)]
@@ -342,7 +342,7 @@ impl AudioKa {
     }
 }
 
-// Implement the Display trait for PlaylistKa
+// Implement the Display trait for AudioKa
 impl Display for AudioKa
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
