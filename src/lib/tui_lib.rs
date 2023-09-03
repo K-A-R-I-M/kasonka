@@ -1,8 +1,16 @@
 use std::io;
 use std::io::Write;
-use std::process::exit;
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType};
+
+#[repr(u32)]
+pub enum GeneralSignal {
+    Exit = 0,
+    InvalidInput = 100,
+    Reboot = 200,
+    Nothing = 300,
+    ValidInput(u32),
+}
 
 pub fn tui_print(text: &str){
     io::stdout().write_all(b"\x1B[2J\x1B[1;1H").unwrap();
@@ -13,7 +21,7 @@ pub fn tui_print(text: &str){
     println!("{}", repeated_egale);
 }
 
-pub fn display_menu(choices: &Vec<String>, choices_quit: &Vec<String>, quit: bool) -> i32{
+pub fn display_menu(choices: &Vec<String>, choices_quit: &Vec<String>) -> GeneralSignal {
     io::stdout().write_all(b"\x1B[2J\x1B[1;1H").unwrap();
     //################################################################
     //    Vars
@@ -46,31 +54,27 @@ pub fn display_menu(choices: &Vec<String>, choices_quit: &Vec<String>, quit: boo
     io::stdin()
         .read_line(&mut input)
         .expect("ERROR while reading the result");
-    let input_nb: i32 = match input.trim().parse() {
+    let input_nb: u32 = match input.trim().parse() {
         Ok(parsed_number) => parsed_number,
         Err(_) => {
-            println!("Invalid input");
-            return -2;
+            return GeneralSignal::InvalidInput;
         }
     };
     //################################################################
     //    Quit Action
     //################################################################
-    let menu_size = (choices.len() + choices_quit.len()) as i32;
+    let menu_size = (choices.len() + choices_quit.len()) as u32;
     match input_nb {
         n if n == menu_size => {
-            if quit{
-                exit(0);
-            }else {
-                return -1;
-            }
+            return GeneralSignal::Exit;
         },
-        _ => {},
+        _ => {
+            return GeneralSignal::ValidInput(input_nb);
+        },
     }
     //################################################################
     //    End
     //################################################################
-    return input_nb;
 }
 
 pub fn ask_prompt(title: &str) -> String{

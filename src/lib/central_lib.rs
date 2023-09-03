@@ -3,7 +3,7 @@ use reqwest;
 use scraper::{Html, Selector};
 use regex::Regex;
 use std::process::{Command, Stdio};
-use crate::lib::tui_lib::tui_print;
+use super::tui_lib::tui_print;
 
 fn get_yt_page(req: &str) -> Result<String, Box<dyn std::error::Error>> {
 

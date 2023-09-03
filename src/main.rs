@@ -1,12 +1,13 @@
 mod lib;
 
-use std::{env, fs, io};
+use std::{env, fs, io, thread};
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 use rodio::Sink;
 use std::thread::sleep;
 use std::time::Duration;
-use lib::tui_lib::{ask_prompt, display_menu, tui_print};
-use lib::model_lib::{AudioPlayer, Menu};
+use crate::lib::tui_lib::{ask_prompt, display_menu, GeneralSignal, tui_print};
+use crate::lib::model_lib::{AudioPlayer, AudioPlayerStatus, GeneralVars, Menu, PlaylistKa};
 
 
 fn init()-> io::Result<()>{
@@ -37,90 +38,194 @@ fn init()-> io::Result<()>{
 
 }
 
-fn playlist_menu() -> i32{
+fn playlist_menu(cont_pk_origin: &mut Arc<Mutex<Vec<PlaylistKa>>>) -> GeneralSignal {
+
+    let binding_cont_pk = cont_pk_origin.clone();
+    let mut cont_pk = binding_cont_pk.lock().unwrap();
     let playlist_menu = Menu::playlist_menu();
 
     let playlist_menu_input_choice = display_menu(
         &playlist_menu.menu_choice,
-        &playlist_menu.menu_choice_quit,
-        false
+        &playlist_menu.menu_choice_quit
     );
     match playlist_menu_input_choice {
-        5 => println!("*********"),
-        -1 => println!("bye!!!"),
+        GeneralSignal::ValidInput(1) => {
+            let title_playlist = ask_prompt("playlist name: ");
+            cont_pk.push(PlaylistKa::new(title_playlist, Vec::new()));
+        },
+        GeneralSignal::ValidInput(2) => {
+            for pk in &*cont_pk{
+                println!("{}", pk.title);
+            }
+        },
+        GeneralSignal::ValidInput(3) => {
+            let id_playlist_str = ask_prompt("playlist id: ");
+
+            // Use the `parse()` method to attempt conversion
+            let id_playlist_int = id_playlist_str.replace("\n", "").parse::<i32>();
+
+            // Check if parsing was successful
+            match id_playlist_int {
+                Ok(id_playlist) => {
+                    if (id_playlist as u32) < ((*cont_pk).len() as u32) && id_playlist >= 0 {
+                        for ak in &(&*cont_pk.get(id_playlist as usize).unwrap()).audios{
+                            println!("{}", ak.title);
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!("{:?}", id_playlist_str);
+                    println!("{:?}", id_playlist_int);
+                    println!("Failed to parse the string as an integer.");
+                }
+            }
+
+        },
+        GeneralSignal::ValidInput(4) => {
+
+        },
+        GeneralSignal::ValidInput(5) => println!("*********"),
+        GeneralSignal::Exit => println!("bye!!!"),
         _ => println!("*****ssssss****"),
     }
     return playlist_menu_input_choice
 }
 
-fn main_menu(ap_origin: &mut Arc<Mutex<AudioPlayer>>){
-    let binding_ap = ap_origin.clone();
-    let mut ap = binding_ap.lock().unwrap();
+fn main_menu(ap_origin: &mut Arc<Mutex<Option<AudioPlayer>>>, cont_pk_origin: &mut Arc<Mutex<Vec<PlaylistKa>>>) -> GeneralSignal {
+    let mut app_status = GeneralSignal::Nothing;
+
+    let ap_local_clone = ap_origin.clone();
+    let mut binding_ap = ap_local_clone.lock().unwrap();
+    let mut binding_ap_none = AudioPlayer::new_none();
+    let ap = binding_ap.as_mut().unwrap_or(&mut binding_ap_none);
+
+    let mut cont_pk_local_clone = cont_pk_origin.clone();
+
     let main_menu = Menu::main_menu();
+
+    if matches!(*ap.status.lock().unwrap(), AudioPlayerStatus::Disabled){
+        app_status = GeneralSignal::Exit;
+        return app_status;
+    }
 
     let main_menu_input_choice = display_menu(
         &main_menu.menu_choice,
-        &main_menu.menu_choice_quit,
-        true
+        &main_menu.menu_choice_quit
     );
 
     match main_menu_input_choice {
-        1 => {
+        GeneralSignal::ValidInput(1) => {
             let title_research = ask_prompt("title of your research: ");
-            ap.add_audio(&title_research, );
+            ap.add_audio(&title_research);
         },
-        2 =>{
+        GeneralSignal::ValidInput(2) => {
             if ap.is_paused() {
                 ap.resume();
             }else {
                 ap.pause();
             }
         },
-        3 =>{
+        GeneralSignal::ValidInput(3) => {
             ap.next_audio();
         },
-        4 =>{
+        GeneralSignal::ValidInput(4) => {
           ap.print_audio_list();
         },
-        5 => {
+        GeneralSignal::ValidInput(5) => {
             loop {
-                let loop_status = playlist_menu();
-                if loop_status == -1 {
+                let loop_status = playlist_menu(&mut cont_pk_local_clone);
+                if matches!(loop_status, GeneralSignal::Exit) {
                     break;
                 }
                 sleep(Duration::from_millis(1000));
             }
         },
-        6 => {
+        GeneralSignal::ValidInput(6) => {
+            app_status = GeneralSignal::Reboot;
+        },
+        GeneralSignal::ValidInput(7) => {
             tui_print("Author: K-A-R-I-M \nhttps://github.com/K-A-R-I-M");
         },
-        7 => {
+        GeneralSignal::ValidInput(8) => {
             tui_print("No Parameter for now!!!");
         },
+        GeneralSignal::InvalidInput =>{
+            println!("Invalid input");
+        }
+        GeneralSignal::Exit => {
+            app_status = GeneralSignal::Exit;
+        }
         _ => {},
     }
+    return app_status;
 }
 
+fn main_thread(mut gv_main_thread: GeneralVars) -> GeneralSignal{
+    let _ = init();
+    let mut app_status: GeneralSignal;
 
+    let mut cont_pk: Arc<Mutex<Vec<PlaylistKa>>> = gv_main_thread.c_pk;
+    let mut ap = gv_main_thread.ap;
+
+
+    //--------------------------------- MEDIA CONTROL INTERNAL INIT ---------------------------------
+
+    loop {
+        app_status = main_menu(&mut ap, &mut cont_pk);
+        if matches!(app_status, GeneralSignal::Exit) || matches!(app_status, GeneralSignal::Reboot) {
+            break;
+        }
+        sleep(Duration::from_millis(1000));
+    }
+
+
+    //------------------------------ reboot audio system -----------------------------------
+    //--------------------------------- AUDIO INIT ---------------------------------
+    let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    let audio_player = Arc::new(Mutex::new(sink));
+    //--------------------------------- AUDIO PLAYER INIT ---------------------------------
+    gv_main_thread.ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
+
+    gv_main_thread.c_pk = Arc::new(Mutex::new(Vec::new()));
+
+
+    return app_status;
+}
 
 fn main() {
+    let mut gv = GeneralVars::new();
 
-    let _ = init();
 
     //--------------------------------- AUDIO INIT ---------------------------------
     let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
     let sink = Sink::try_new(&stream_handle).unwrap();
     let audio_player = Arc::new(Mutex::new(sink));
     //--------------------------------- AUDIO PLAYER INIT ---------------------------------
-    let mut ap = Arc::new(Mutex::new(AudioPlayer::new(audio_player)));
+    let ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
 
+    let cont_pk: Arc<Mutex<Vec<PlaylistKa>>> = Arc::new(Mutex::new(Vec::new()));
 
-    //--------------------------------- MEDIA CONTROL INTERNAL INIT ---------------------------------
-
+    gv.ap = ap;
+    gv.c_pk = cont_pk;
 
     loop {
-        main_menu(&mut ap);
-        sleep(Duration::from_millis(1000));
+        let gv_thread_main = gv.clone();
+        let gv_thread_player_check = gv.clone();
+
+        let _thread_player_check = thread::spawn(move|| {
+            AudioPlayer::start_auto_next(gv_thread_player_check.ap.clone());
+        });
+        let thread_main_join = thread::spawn(move|| {
+            main_thread(gv_thread_main)
+        });
+
+        let app_status = thread_main_join.join().unwrap();
+
+        if matches!(app_status, GeneralSignal::Exit) {
+            exit(0);
+        }
+        tui_print("Reboot Kasonka");
     }
 
 }
