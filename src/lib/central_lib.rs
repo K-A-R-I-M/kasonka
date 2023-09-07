@@ -1,8 +1,10 @@
-use std::env;
+use std::{env, fs};
+use std::fs::File;
 use reqwest;
 use scraper::{Html, Selector};
 use regex::Regex;
 use std::process::{Command, Stdio};
+use reqwest::get;
 use super::tui_lib::tui_print;
 
 fn get_yt_page(req: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -80,7 +82,7 @@ pub fn exec_command_yt_dl(url: &str, file_name: &str) {
     exec_command(
         &vec![
             "utils",
-            "yt-dlp.exe"
+            "yt-dlp"
         ],
         &vec![
             "-vU",
@@ -98,4 +100,26 @@ pub fn exec_command_yt_dl(url: &str, file_name: &str) {
         ]
     );
 
+}
+
+pub fn dependencies_check() -> bool{
+    let folder_path = "utils"; // Replace with the path to your "utils" folder.
+    let file_names = vec!["yt-dlp", "ffmpeg"];// Replace with the name of your test file.
+    let mut path = env::current_exe().expect("Failed to get executable path");
+    path.pop();
+    path.push(folder_path);
+
+    for file_name in file_names{
+        let mut path_clone = path.clone();
+        path_clone.push(file_name);
+        let file_path = path_clone.to_string_lossy().to_string();
+
+        if fs::metadata(&file_path).is_ok() {
+            println!("The file {} exists in the {} folder.", file_name, folder_path);
+        } else {
+            println!("The file {} does not exist in the {} folder.", file_name, folder_path);
+            return false;
+        }
+    }
+    return true;
 }

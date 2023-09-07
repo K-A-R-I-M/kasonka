@@ -11,6 +11,7 @@ use std::ptr::null_mut;
 use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::Foundation::HWND;
+use crate::lib::central_lib::dependencies_check;
 use crate::lib::tui_lib::{ask_prompt, display_menu, GeneralSignal, tui_print};
 use crate::lib::model_lib::{AudioPlayer, AudioPlayerStatus, GeneralVars, MediaControlsInternal, Menu, PlaylistKa};
 
@@ -200,28 +201,33 @@ fn main_thread(mut gv_main_thread: GeneralVars) -> GeneralSignal{
 }
 
 fn main() {
-    let mut gv = GeneralVars::new();
 
-    let mut controls = Arc::new(Mutex::new(None));
+    let deps_status = dependencies_check();
 
+    if deps_status {
 
-    //--------------------------------- AUDIO INIT ---------------------------------
-    let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&stream_handle).unwrap();
-    let audio_player = Arc::new(Mutex::new(sink));
-    //--------------------------------- AUDIO PLAYER INIT ---------------------------------
-    let ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
+        let mut gv = GeneralVars::new();
 
-    //--------------------------------- CONT PlaylistKa INIT ---------------------------------
-    let cont_pk: Arc<Mutex<Vec<PlaylistKa>>> = Arc::new(Mutex::new(Vec::new()));
+        let mut controls = Arc::new(Mutex::new(None));
 
 
-    //--------------------------------- MediaControlInternal INIT ---------------------------------
-    #[cfg(not(target_os = "windows"))]
-        let hwnd = None;
+        //--------------------------------- AUDIO INIT ---------------------------------
+        let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+        let audio_player = Arc::new(Mutex::new(sink));
+        //--------------------------------- AUDIO PLAYER INIT ---------------------------------
+        let ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
 
-    #[cfg(target_os = "windows")]
-        let mut hwnd = None;
+        //--------------------------------- CONT PlaylistKa INIT ---------------------------------
+        let cont_pk: Arc<Mutex<Vec<PlaylistKa>>> = Arc::new(Mutex::new(Vec::new()));
+
+
+        //--------------------------------- MediaControlInternal INIT ---------------------------------
+        #[cfg(not(target_os = "windows"))]
+            let hwnd = None;
+
+        #[cfg(target_os = "windows")]
+            let mut hwnd = None;
         let mut raw_hwnd = unsafe { GetConsoleWindow() };
         match raw_hwnd.0 {
             0 => println!("Error getting console window handle"),
@@ -231,56 +237,58 @@ fn main() {
             },
         }
 
-    if (cfg!(target_os="windows") && !(matches!(hwnd, None))) || !(cfg!(target_os="windows")) {
-        let config = PlatformConfig {
-            dbus_name: "my_player",
-            display_name: "My Player",
-            hwnd: hwnd,
-        };
-        match MediaControls::new(config) {
-            Ok(mc) => {
-                controls = Arc::new(Mutex::new(Some(MediaControlsInternal::new(mc))));
+        if (cfg!(target_os="windows") && !(matches!(hwnd, None))) || !(cfg!(target_os="windows")) {
+            let config = PlatformConfig {
+                dbus_name: "my_player",
+                display_name: "My Player",
+                hwnd: hwnd,
+            };
+            match MediaControls::new(config) {
+                Ok(mc) => {
+                    controls = Arc::new(Mutex::new(Some(MediaControlsInternal::new(mc))));
+                }
+                Err(error) => {
+                    println!("no media available {:?}", error);
+                    println!("{:?}", hwnd);
+                }
             }
-            Err(error) => {
-                println!("no media available {:?}", error);
-                println!("{:?}", hwnd);
-            }
+
         }
 
-    }
 
+        gv.ap = ap;
+        gv.c_pk = cont_pk;
+        gv.mci = controls;
 
-    gv.ap = ap;
-    gv.c_pk = cont_pk;
-    gv.mci = controls;
+        loop {
+            let gv_thread_main = gv.clone();
+            let gv_thread_player_check = gv.clone();
+            let mut gv_thread_media_controls = gv.clone();
 
-    loop {
-        let gv_thread_main = gv.clone();
-        let gv_thread_player_check = gv.clone();
-        let mut gv_thread_media_controls = gv.clone();
+            let _thread_player_check = thread::spawn(move|| {
+                AudioPlayer::start_auto_next(gv_thread_player_check.ap.clone(), gv_thread_player_check.mci.clone());
+            });
 
-        let _thread_player_check = thread::spawn(move|| {
-            AudioPlayer::start_auto_next(gv_thread_player_check.ap.clone(), gv_thread_player_check.mci.clone());
-        });
+            let _thread_media_controls = thread::spawn(move|| {
+                let local_mci = gv_thread_media_controls.mci.lock().unwrap();
+                if !(local_mci.is_none()) {
+                    drop(local_mci);
+                    MediaControlsInternal::attach_os_notify(&mut gv_thread_media_controls.ap.clone(), &mut gv_thread_media_controls.mci.clone());
+                }
+            });
 
-        let _thread_media_controls = thread::spawn(move|| {
-            let local_mci = gv_thread_media_controls.mci.lock().unwrap();
-            if !(local_mci.is_none()) {
-                drop(local_mci);
-                MediaControlsInternal::attach_os_notify(&mut gv_thread_media_controls.ap.clone(), &mut gv_thread_media_controls.mci.clone());
+            let thread_main_join = thread::spawn(move|| {
+                main_thread(gv_thread_main)
+            });
+
+            let app_status = thread_main_join.join().unwrap();
+
+            if matches!(app_status, GeneralSignal::Exit) {
+                exit(0);
             }
-        });
-
-        let thread_main_join = thread::spawn(move|| {
-            main_thread(gv_thread_main)
-        });
-
-        let app_status = thread_main_join.join().unwrap();
-
-        if matches!(app_status, GeneralSignal::Exit) {
-            exit(0);
+            tui_print("Reboot Kasonka");
         }
-        tui_print("Reboot Kasonka");
+    }else {
+        println!("error with dependencies");
     }
-
 }
