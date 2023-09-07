@@ -227,33 +227,35 @@ fn main() {
             let hwnd = None;
 
         #[cfg(target_os = "windows")]
-            let mut hwnd = None;
-        let mut raw_hwnd = unsafe { GetConsoleWindow() };
-        match raw_hwnd.0 {
-            0 => println!("Error getting console window handle"),
-            pre_hwnd => {
-                //println!("Console window handle: {:?}", hwnd)
-                hwnd = Some(pre_hwnd as *mut c_void);
-            },
-        }
-
-        if (cfg!(target_os="windows") && !(matches!(hwnd, None))) || !(cfg!(target_os="windows")) {
-            let config = PlatformConfig {
-                dbus_name: "my_player",
-                display_name: "My Player",
-                hwnd: hwnd,
+            let mut hwnd = {
+                let mut re_hwnd = None;
+                let mut raw_hwnd = unsafe { GetConsoleWindow() };
+                match raw_hwnd.0 {
+                    0 => println!("Error getting console window handle"),
+                    pre_hwnd => {
+                        //println!("Console window handle: {:?}", hwnd)
+                        re_hwnd = Some(pre_hwnd as *mut c_void);
+                    },
+                }
+                re_hwnd
             };
-            match MediaControls::new(config) {
-                Ok(mc) => {
-                    controls = Arc::new(Mutex::new(Some(MediaControlsInternal::new(mc))));
-                }
-                Err(error) => {
-                    println!("no media available {:?}", error);
-                    println!("{:?}", hwnd);
-                }
+    if (cfg!(target_os="windows") && !(matches!(hwnd, None))) || !(cfg!(target_os="windows")) {
+        let config = PlatformConfig {
+            dbus_name: "my_player",
+            display_name: "My Player",
+            hwnd: hwnd,
+        };
+        match MediaControls::new(config) {
+            Ok(mc) => {
+                controls = Arc::new(Mutex::new(Some(MediaControlsInternal::new(mc))));
             }
-
+            Err(error) => {
+                println!("no media available {:?}", error);
+                println!("{:?}", hwnd);
+            }
         }
+
+    }
 
 
         gv.ap = ap;
