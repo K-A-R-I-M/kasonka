@@ -9,12 +9,14 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::ptr::null_mut;
 use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
-use windows::Win32::System::Console::GetConsoleWindow;
-use windows::Win32::Foundation::HWND;
 use crate::lib::central_lib::dependencies_check;
 use crate::lib::tui_lib::{ask_prompt, display_menu, GeneralSignal, tui_print};
 use crate::lib::model_lib::{AudioPlayer, AudioPlayerStatus, GeneralVars, MediaControlsInternal, Menu, PlaylistKa};
 
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Console::GetConsoleWindow;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
 
 fn init()-> io::Result<()>{
     // Directory where the files are located
