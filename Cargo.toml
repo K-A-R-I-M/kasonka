@@ -15,7 +15,7 @@ rodio = "0.17.1"
 crossterm = "0.26.1"
 souvlaki = "0.6.0"
 
-[dependencies.windows]
+[target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.48.0"
 features = [
     "Data_Xml_Dom",
