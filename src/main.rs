@@ -191,7 +191,14 @@ fn main_thread(mut gv_main_thread: GeneralVars) -> GeneralSignal{
     //------------------------------ reboot audio system -----------------------------------
     //--------------------------------- AUDIO INIT ---------------------------------
     let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&stream_handle).unwrap();
+
+    let sink_raw= Sink::try_new(&stream_handle);
+
+    let sink = match sink_raw {
+        Ok(sink_result)=> sink_result,
+        Err(error) => panic!("ERROR : audio unavailable !!! : {}", error)
+    };
+
     let audio_player = Arc::new(Mutex::new(sink));
     //--------------------------------- AUDIO PLAYER INIT ---------------------------------
     gv_main_thread.ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
@@ -215,7 +222,13 @@ fn main() {
 
         //--------------------------------- AUDIO INIT ---------------------------------
         let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
+        let sink_raw= Sink::try_new(&stream_handle);
+
+        let sink = match sink_raw {
+            Ok(sink_result)=> sink_result,
+            Err(error) => panic!("ERROR : audio unavailable !!! : {}", error)
+        };
+
         let audio_player = Arc::new(Mutex::new(sink));
         //--------------------------------- AUDIO PLAYER INIT ---------------------------------
         let ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));

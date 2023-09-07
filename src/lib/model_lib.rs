@@ -277,7 +277,7 @@ impl AudioPlayer{
         let current_audio_time_clone = self.current_audio_time.clone();
         let _list_audio_clone = self.list_audio.clone();
         let _current_nb_audios_clone_u32 = *self.current_nb_audios.clone().lock().unwrap();
-        let file_name = format!("test{}", *self.current_nb_audios.lock().unwrap());
+        let file_name = format!("test{}.wav", *self.current_nb_audios.lock().unwrap());
 
         // Get audio file path  which is clean
         let mut path = env::current_exe().expect("Failed to get executable path");
@@ -302,18 +302,23 @@ impl AudioPlayer{
     fn exec_play_audio(path: &str, audio_player: &Sink, current_audio_time: &mut Duration){
          //println!("{:?}", format!("{}\\{}.mp3", dir_path, file_name));
         // try to open the audio file
-        let file = File::open(path).map_or_else(|_| None,|file| Some(file));
-        if !(matches!(file, None)){
-            let audio_source = rodio::Decoder::new(BufReader::new(file.unwrap())).unwrap();
+        let file_raw = File::open(path);
 
-            *current_audio_time = audio_source.total_duration().unwrap_or(Duration::new(0, 0));
-            println!("around {:?} seconds", current_audio_time);
-            println!("---------------------------------------");
+        match file_raw {
+            Ok(file) => {
+                let audio_source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
-            // Play the audio file
-            audio_player.append(audio_source);
-            audio_player.play();
+                *current_audio_time = audio_source.total_duration().unwrap_or(Duration::new(0, 0));
+                println!("around {:?} seconds", current_audio_time);
+                println!("---------------------------------------");
+
+                // Play the audio file
+                audio_player.append(audio_source);
+                audio_player.play();
+            },
+            Err(error) => println!("Error: audio file problem : {}", error)
         }
+
     }
 }
 

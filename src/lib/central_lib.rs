@@ -103,8 +103,11 @@ pub fn exec_command_yt_dl(url: &str, file_name: &str) {
 }
 
 pub fn dependencies_check() -> bool{
-    let folder_path = "utils"; // Replace with the path to your "utils" folder.
-    let file_names = vec!["yt-dlp", "ffmpeg"];// Replace with the name of your test file.
+    let folder_path = "utils";
+    #[cfg(not(target_os = "windows"))]
+    let file_names = vec!["yt-dlp", "ffmpeg"];
+    #[cfg(target_os = "windows")]
+        let file_names = vec!["yt-dlp", "ffmpeg.exe"];
     let mut path = env::current_exe().expect("Failed to get executable path");
     path.pop();
     path.push(folder_path);
