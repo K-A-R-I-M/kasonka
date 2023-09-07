@@ -1,13 +1,18 @@
 mod lib;
 
 use std::{env, fs, io, thread};
+use std::ffi::c_void;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use rodio::Sink;
 use std::thread::sleep;
 use std::time::Duration;
+use std::ptr::null_mut;
+use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
+use windows::Win32::System::Console::GetConsoleWindow;
+use windows::Win32::Foundation::HWND;
 use crate::lib::tui_lib::{ask_prompt, display_menu, GeneralSignal, tui_print};
-use crate::lib::model_lib::{AudioPlayer, AudioPlayerStatus, GeneralVars, Menu, PlaylistKa};
+use crate::lib::model_lib::{AudioPlayer, AudioPlayerStatus, GeneralVars, MediaControlsInternal, Menu, PlaylistKa};
 
 
 fn init()-> io::Result<()>{
@@ -100,6 +105,8 @@ fn main_menu(ap_origin: &mut Arc<Mutex<Option<AudioPlayer>>>, cont_pk_origin: &m
     let ap = binding_ap.as_mut().unwrap_or(&mut binding_ap_none);
 
     let mut cont_pk_local_clone = cont_pk_origin.clone();
+
+
 
     let main_menu = Menu::main_menu();
 
@@ -196,6 +203,8 @@ fn main_thread(mut gv_main_thread: GeneralVars) -> GeneralSignal{
 fn main() {
     let mut gv = GeneralVars::new();
 
+    let mut controls = Arc::new(Mutex::new(None));
+
 
     //--------------------------------- AUDIO INIT ---------------------------------
     let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
@@ -204,18 +213,65 @@ fn main() {
     //--------------------------------- AUDIO PLAYER INIT ---------------------------------
     let ap = Arc::new(Mutex::new(Some(AudioPlayer::new(audio_player))));
 
+    //--------------------------------- CONT PlaylistKa INIT ---------------------------------
     let cont_pk: Arc<Mutex<Vec<PlaylistKa>>> = Arc::new(Mutex::new(Vec::new()));
+
+
+    //--------------------------------- MediaControlInternal INIT ---------------------------------
+    #[cfg(not(target_os = "windows"))]
+        let hwnd = None;
+
+    #[cfg(target_os = "windows")]
+        let mut hwnd = None;
+        let mut raw_hwnd = unsafe { GetConsoleWindow() };
+        match raw_hwnd.0 {
+            0 => println!("Error getting console window handle"),
+            pre_hwnd => {
+                //println!("Console window handle: {:?}", hwnd)
+                hwnd = Some(pre_hwnd as *mut c_void);
+            },
+        }
+
+    if (cfg!(target_os="windows") && !(matches!(hwnd, None))) || !(cfg!(target_os="windows")) {
+        let config = PlatformConfig {
+            dbus_name: "my_player",
+            display_name: "My Player",
+            hwnd: hwnd,
+        };
+        match MediaControls::new(config) {
+            Ok(mc) => {
+                controls = Arc::new(Mutex::new(Some(MediaControlsInternal::new(mc))));
+            }
+            Err(error) => {
+                println!("no media available {:?}", error);
+                println!("{:?}", hwnd);
+            }
+        }
+
+    }
+
 
     gv.ap = ap;
     gv.c_pk = cont_pk;
+    gv.mci = controls;
 
     loop {
         let gv_thread_main = gv.clone();
         let gv_thread_player_check = gv.clone();
+        let mut gv_thread_media_controls = gv.clone();
 
         let _thread_player_check = thread::spawn(move|| {
-            AudioPlayer::start_auto_next(gv_thread_player_check.ap.clone());
+            AudioPlayer::start_auto_next(gv_thread_player_check.ap.clone(), gv_thread_player_check.mci.clone());
         });
+
+        let _thread_media_controls = thread::spawn(move|| {
+            let local_mci = gv_thread_media_controls.mci.lock().unwrap();
+            if !(local_mci.is_none()) {
+                drop(local_mci);
+                MediaControlsInternal::attach_os_notify(&mut gv_thread_media_controls.ap.clone(), &mut gv_thread_media_controls.mci.clone());
+            }
+        });
+
         let thread_main_join = thread::spawn(move|| {
             main_thread(gv_thread_main)
         });
