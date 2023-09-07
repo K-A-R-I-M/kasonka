@@ -107,7 +107,6 @@ fn main_menu(ap_origin: &mut Arc<Mutex<Option<AudioPlayer>>>, cont_pk_origin: &m
     let mut cont_pk_local_clone = cont_pk_origin.clone();
 
 
-
     let main_menu = Menu::main_menu();
 
     if matches!(*ap.status.lock().unwrap(), AudioPlayerStatus::Disabled){
