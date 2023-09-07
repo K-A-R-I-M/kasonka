@@ -6,13 +6,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use rodio::{Sink, Source};
+use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
 use super::central_lib::{exec_command_yt_dl, research_on_yt};
 use super::tui_lib::tui_print;
 
 #[derive(Clone)]
 pub struct GeneralVars {
     pub ap: Arc<Mutex<Option<AudioPlayer>>>,
-    pub c_pk: Arc<Mutex<Vec<PlaylistKa>>>
+    pub c_pk: Arc<Mutex<Vec<PlaylistKa>>>,
+    pub mci: Arc<Mutex<Option<MediaControlsInternal>>>,
 }
 
 impl GeneralVars {
@@ -20,6 +22,7 @@ impl GeneralVars {
         Self{
             ap: Arc::new(Mutex::new(None)),
             c_pk: Arc::new(Mutex::new(Vec::new())),
+            mci: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -116,15 +119,18 @@ impl AudioPlayer{
         }
     }
 
-    pub fn start_auto_next(ap_raw: Arc<Mutex<Option<AudioPlayer>>>){
+    pub fn start_auto_next(ap_raw: Arc<Mutex<Option<AudioPlayer>>>, mci_raw: Arc<Mutex<Option<MediaControlsInternal>>>){
         let ap_clone = ap_raw.clone();
         let mut binding_ap = ap_clone.lock().unwrap();
         let mut binding_ap_none = AudioPlayer::new_none();
         let ap = binding_ap.as_mut().unwrap_or(&mut binding_ap_none);
 
-        if !(matches!(*ap.status.lock().unwrap(), AudioPlayerStatus::Disabled)) {
+        let mci_clone = mci_raw.clone();
+        let mut binding_mci = mci_clone.lock().unwrap();
 
+        if !(matches!(*ap.status.lock().unwrap(), AudioPlayerStatus::Disabled)) {
             let ap_clone_thread = ap.clone();
+            let ap_clone_thread_2 = ap.clone();
 
             drop(binding_ap);
 
@@ -134,17 +140,46 @@ impl AudioPlayer{
                 loop {
                     if *ap.thread_status.lock().unwrap() {
                         if ap.is_nextable() {
-                            while !(ap.play_obj.lock().unwrap().empty()){
+                            while !(ap.play_obj.lock().unwrap().empty()) {
                                 sleep(Duration::new(1, 0));
                             }
                             ap.next_audio();
                         }
                         sleep(Duration::new(1, 0));
-                    }else{
+                    } else {
                         break;
                     }
                 }
             });
+
+
+
+            if !(binding_mci.as_mut().is_none()) {
+                thread::spawn(move || {
+                    let mci_local_clone = mci_raw.clone();
+                    let mut mci_local = mci_local_clone.lock().unwrap();
+                    let mut ap = ap_clone_thread_2;
+
+                    loop {
+                        if *ap.thread_status.lock().unwrap() {
+                            match *ap.status.lock().unwrap() {
+                                AudioPlayerStatus::Play => {
+                                    mci_local.as_mut().unwrap().media_controls.set_playback(MediaPlayback::Playing { progress: None }).expect("set playing : panic message");
+                                },
+                                AudioPlayerStatus::Pause => {
+                                    mci_local.as_mut().unwrap().media_controls.set_playback(MediaPlayback::Paused { progress: None }).expect("set pause : panic message");
+                                },
+                                _ => {
+
+                                }
+                            }
+                            sleep(Duration::new(1, 0));
+                        } else {
+                            break;
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -358,3 +393,50 @@ impl Display for AudioKa
 }
 
 
+
+pub struct MediaControlsInternal{
+    pub media_controls: MediaControls,
+    pub media_controls_status: bool,
+}
+
+impl MediaControlsInternal{
+    pub fn new(mc: MediaControls) -> Self{
+        Self{
+            media_controls: mc,
+            media_controls_status: true,
+        }
+    }
+
+    pub fn attach_os_notify(ap_raw: &mut Arc<Mutex<Option<AudioPlayer>>>, mci_raw: &mut Arc<Mutex<Option<MediaControlsInternal>>>) {
+        let ap_clone = ap_raw.clone();
+        let mut binding_ap = ap_clone.lock().unwrap();
+        let mut binding_ap_none = AudioPlayer::new_none();
+        let ap = binding_ap.as_mut().unwrap_or(&mut binding_ap_none);
+
+        if !(matches!(*ap.status.lock().unwrap(), AudioPlayerStatus::Disabled)) {
+
+            let ap_clone_thread = ap.clone();
+
+            if let Some(mci) = mci_raw.lock().unwrap().as_mut() {
+                mci.media_controls.attach(move |event: MediaControlEvent| {
+                    let mut ap = ap_clone_thread.clone();
+                    match event {
+                        MediaControlEvent::Pause => {
+                            ap.pause();
+                        },
+                        MediaControlEvent::Play => {
+                            ap.resume();
+                        },
+                        MediaControlEvent::Next =>{
+                            ap.next_audio();
+                        }
+                        _ => {
+
+                        }
+                    }
+                }).expect("Media Control panic");
+            }
+        }
+    }
+
+}
